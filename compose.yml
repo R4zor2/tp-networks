@@ -1,52 +1,16 @@
 services:
-  db:
-    image: mariadb:11
-    restart: always
-    environment:
-      MARIADB_ROOT_PASSWORD: matheo
-      MARIADB_DATABASE: matheo
-      MARIADB_USER: matheo
-      MARIADB_PASSWORD: matheo
-    volumes:
-      - db_data:/var/lib/mysql
-    networks:
-      - backend_net          
-
-  app:
-    build:
-      context: ./app         
-    restart: always
-    depends_on:
-      - db
-    environment:
-      DB_HOST: db
-      DB_NAME: matheo
-      DB_USER: matheo
-      DB_PASS: matheo
-    networks:
-      - backend_net          
-      
-
-  proxy:
-    image: nginx:alpine
-    restart: always
-    depends_on:
-      - app
-    volumes:
-    - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-
-    ports:
-      - "8080:80"            
-    networks:
-      - frontend_net         
-      - backend_net    
-
-    traefik:
+  traefik:
     image: traefik:v2.10
     command:
+      - --log.level=DEBUG
+      - --accesslog=true
+
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=frontend_net
+
       - --providers.file.filename=/etc/traefik/dynamic.yml
+
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
     ports:
@@ -58,7 +22,62 @@ services:
       - ./certs:/certs:ro
     networks:
       - frontend_net
-      
+
+  db:
+    image: mariadb:11
+    restart: always
+    environment:
+      MARIADB_ROOT_PASSWORD: matheo
+      MARIADB_DATABASE: matheo
+      MARIADB_USER: matheo
+      MARIADB_PASSWORD: matheo
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - backend_net
+
+  app:
+    build:
+      context: ./app
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_NAME: matheo
+      DB_USER: matheo
+      DB_PASS: matheo
+    networks:
+      - backend_net
+
+  proxy:
+    image: nginx:alpine
+    restart: always
+    depends_on:
+      - app
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    labels:
+    - traefik.enable=true
+    - traefik.docker.network=tp-networks_frontend_net
+    - traefik.http.services.app.loadbalancer.server.port=80
+
+    - traefik.http.routers.app-http.rule=Host(`app.localhost`)
+    - traefik.http.routers.app-http.entrypoints=web
+    - traefik.http.routers.app-http.middlewares=redirect-to-https
+
+    - traefik.http.routers.app-https.rule=Host(`app.localhost`)
+    - traefik.http.routers.app-https.entrypoints=websecure
+    - traefik.http.routers.app-https.tls=true
+
+    - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+    - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
+    
+
+    networks:
+      - frontend_net
+      - backend_net
+
 
 volumes:
   db_data:
@@ -66,3 +85,4 @@ volumes:
 networks:
   backend_net:
   frontend_net:
+
