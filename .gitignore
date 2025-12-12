@@ -1,0 +1,5 @@
+
+# TLS private keys
+certs/*.key
+certs/*.pem
+
